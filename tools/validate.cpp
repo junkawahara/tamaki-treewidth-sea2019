@@ -17,7 +17,7 @@ int main(int argc, char** argv) {
   }
   try {
     Graph G = readGr(g);
-    TreeDecomp td = readTd(t);
+    TreeDecomp td = readTd(t, G.n);
     std::string err = validateTD(G, td);
     if (!err.empty()) {
       std::cout << "INVALID: " << err << "\n";

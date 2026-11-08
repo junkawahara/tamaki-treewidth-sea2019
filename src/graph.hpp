@@ -294,29 +294,57 @@ inline Graph readGr(std::istream& in) {
   return G;
 }
 
-inline TreeDecomp readTd(std::istream& in) {
+// A decomposition of a graph with n vertices: "s td N W n" first, then the N
+// bag lines "b i v1 v2 ..." (each i in [1, N] exactly once, every vertex in
+// [1, n]) and the tree edge lines "i j" (i, j in [1, N]) in any order.  The
+// declared n must equal the n given here and W the size of the largest bag.
+// Whether the result is a tree decomposition is left to validateTD.
+inline TreeDecomp readTd(std::istream& in, int n) {
+  using namespace pace_io;
   std::string line;
   TreeDecomp td;
+  bool header = false;
+  int nb = 0;
+  long long declaredMax = 0;
+  std::vector<char> defined;
   while (std::getline(in, line)) {
-    if (line.empty() || line[0] == 'c') continue;
-    std::istringstream ss(line);
-    std::string t;
-    ss >> t;
-    if (t == "s") {
-      std::string td_;
-      int nb, mx, n;
-      ss >> td_ >> nb >> mx >> n;
+    if (!line.empty() && line[0] == 'c') continue;
+    std::vector<std::string> t = tokens(line);
+    if (t.empty()) continue;
+    if (t[0] == "s") {
+      if (header) throw std::runtime_error("second s-line: " + line);
+      if (t.size() != 5 || t[1] != "td") throw std::runtime_error("bad s-line: " + line);
+      nb = static_cast<int>(parseInt(t[2], 0, INT_MAX, line));
+      declaredMax = parseInt(t[3], 0, INT_MAX, line);
+      if (parseInt(t[4], 0, INT_MAX, line) != n)
+        throw std::runtime_error("the s-line declares " + t[4] + " vertices but the graph has " + std::to_string(n));
       td.bags.assign(nb, {});
-    } else if (t == "b") {
-      int id, v;
-      ss >> id;
-      while (ss >> v) td.bags.at(id - 1).push_back(v - 1);
+      defined.assign(nb, 0);
+      header = true;
+      continue;
+    }
+    if (!header) throw std::runtime_error("line before the s-line: " + line);
+    if (t[0] == "b") {
+      if (t.size() < 2) throw std::runtime_error("bad bag line: " + line);
+      int id = static_cast<int>(parseInt(t[1], 1, nb, line)) - 1;
+      if (defined[id]) throw std::runtime_error("bag " + t[1] + " is defined twice");
+      defined[id] = 1;
+      for (size_t i = 2; i < t.size(); ++i) td.bags[id].push_back(static_cast<int>(parseInt(t[i], 1, n, line)) - 1);
     } else {
-      int a = std::stoi(t), b;
-      ss >> b;
+      if (t.size() != 2) throw std::runtime_error("bad tree edge line: " + line);
+      int a = static_cast<int>(parseInt(t[0], 1, nb, line));
+      int b = static_cast<int>(parseInt(t[1], 1, nb, line));
       td.edges.push_back({a - 1, b - 1});
     }
   }
+  if (!header) throw std::runtime_error("missing s-line");
+  for (int i = 0; i < nb; ++i)
+    if (!defined[i]) throw std::runtime_error("bag " + std::to_string(i + 1) + " is not defined");
+  size_t mx = 0;
+  for (const auto& b : td.bags) mx = std::max(mx, b.size());
+  if (static_cast<long long>(mx) != declaredMax)
+    throw std::runtime_error("the s-line declares maximum bag size " + std::to_string(declaredMax) +
+                             " but the largest bag has " + std::to_string(mx) + " vertices");
   return td;
 }
 
