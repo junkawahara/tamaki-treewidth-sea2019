@@ -62,5 +62,11 @@ int main(int argc, char** argv) {
   TreeDecomp td = solver.solve(G);
   if (opt.verbose) std::cerr << "c treewidth " << td.width() << std::endl;
   writeTd(std::cout, td, G.n);
+  // A failed write (e.g. a full disk) may only show up when the buffer is flushed.
+  std::cout.flush();
+  if (!std::cout) {
+    std::cerr << "write error: could not write the tree decomposition\n";
+    return 1;
+  }
   return 0;
 }
