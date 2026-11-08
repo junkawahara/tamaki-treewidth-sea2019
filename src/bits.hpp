@@ -10,7 +10,8 @@ class Bits {
   std::vector<uint64_t> w;
 
   Bits() = default;
-  explicit Bits(int n) : w(static_cast<size_t>((n + 63) >> 6), 0) {}
+  // n >= 0.  The word count is computed in size_t so that n near INT_MAX does not overflow.
+  explicit Bits(int n) : w((static_cast<size_t>(n) + 63) >> 6, 0) {}
 
   void set(int i) { w[i >> 6] |= 1ULL << (i & 63); }
   void reset(int i) { w[i >> 6] &= ~(1ULL << (i & 63)); }
