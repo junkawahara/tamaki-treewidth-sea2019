@@ -18,6 +18,7 @@ int main(int argc, char** argv) {
   std::ios::sync_with_stdio(false);
   Options opt;
   std::string path;
+  bool havePath = false;
   for (int i = 1; i < argc; ++i) {
     std::string a = argv[i];
     if (a == "-m" && i + 1 < argc) {
@@ -35,16 +36,17 @@ int main(int argc, char** argv) {
     } else if (a == "-h" || a == "--help") {
       usage();
       return 0;
-    } else if (!a.empty() && a[0] == '-') {
+    } else if ((!a.empty() && a[0] == '-') || havePath) {  // unknown option or a second input file
       usage();
       return 2;
     } else {
       path = a;
+      havePath = true;
     }
   }
   Graph G;
   try {
-    if (path.empty()) {
+    if (!havePath) {
       G = readGr(std::cin);
     } else {
       std::ifstream in(path);
