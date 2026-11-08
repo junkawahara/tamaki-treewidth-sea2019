@@ -167,6 +167,7 @@ inline TreeDecomp compressTD(const TreeDecomp& in, int n) {
 }
 
 // Returns an empty string if td is a valid tree decomposition of G, else a message.
+// A bag listing a vertex twice is rejected, since width() counts list entries.
 inline std::string validateTD(const Graph& G, const TreeDecomp& td) {
   int nb = static_cast<int>(td.bags.size());
   if (G.n > 0 && nb == 0) return "no bags";
@@ -175,6 +176,7 @@ inline std::string validateTD(const Graph& G, const TreeDecomp& td) {
   for (int i = 0; i < nb; ++i)
     for (int v : td.bags[i]) {
       if (v < 0 || v >= G.n) return "vertex out of range";
+      if (bag[i].test(v)) return "vertex " + std::to_string(v + 1) + " appears twice in bag " + std::to_string(i + 1);
       bag[i].set(v);
     }
   std::vector<std::vector<int>> adj(nb);
