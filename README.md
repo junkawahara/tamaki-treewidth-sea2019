@@ -1,146 +1,153 @@
-# tw — 極小分離集合リストによる木幅の厳密計算（Tamaki, SEA 2019 の再現実装）
+# tw — Exact treewidth via lists of minimal separators (a reimplementation of Tamaki, SEA 2019)
 
-H. Tamaki, "Computing treewidth via exact and heuristic lists of minimal separators"
-（SEA 2019 / Shonan Meeting 144 講演資料, 2019/3/7）の方法を C++20 で実装したものです。
-論文本文は参照できなかったため、スライドの記述から細部を推測して補っています（下記「推測・変更点」を参照）。
+A C++20 implementation of the method of H. Tamaki, "Computing treewidth via exact and heuristic lists of minimal separators"
+(SEA 2019 / talk slides at Shonan Meeting 144, March 7, 2019).
+The paper itself was not available, so the details were inferred from the slides (see "Guesses and deviations" below).
 
-## ビルドと実行
+All of the code in this repository was implemented by Claude Opus 5.5.
+
+## Build and run
 
 ```sh
-make                 # tw と td-validate をビルド
-make test            # ランダムテスト（総当たり列挙・総当たり木幅 DP との照合）
+make                 # build tw and td-validate
+make test            # randomized tests (checked against brute-force enumeration and a brute-force treewidth DP)
 
 ./tw [-m ascend|descend|alternate] [-p0] [-v|-vv] [input.gr] > output.td
-./td-validate input.gr output.td      # 木分解の検証（"OK width=W"）
+./td-validate input.gr output.td      # validate the tree decomposition ("OK width=W")
 ```
 
-* 入力: PACE 2017 `.gr`（ファイル指定なしなら標準入力）、出力: PACE 2017 `.td`（標準出力）
-* `-m`: 探索方法。既定は `ascend`（必須要件）。`descend`・`alternate` も実装済み
-* `-p0`: 前処理（安全な縮約規則）を無効化してスライドのアルゴリズムだけで解く
-* `-v` / `-vv`: 進捗を標準エラーに `c ...` 形式で出力
+* Input: PACE 2017 `.gr` (read from standard input if no file is given); output: PACE 2017 `.td` (written to standard output)
+* `-m`: search method. The default is `ascend` (a required feature); `descend` and `alternate` are also implemented
+* `-p0`: disable preprocessing (the safe reduction rules) and solve with the algorithm of the slides alone
+* `-v` / `-vv`: print progress to standard error as `c ...` lines
 
-## 構成
+## Files
 
-| ファイル | 内容 |
+| File | Contents |
 |---|---|
-| `src/bits.hpp` | 頂点集合用の可変長ビットセット |
-| `src/graph.hpp` | グラフ、連結成分、木分解、PACE 入出力、木分解の検証・圧縮 |
-| `src/msdp.hpp` | 部品1 `msDP(G, k, Δ)` |
-| `src/minseps.hpp` | 部品2 `listExact(G, k)`、部品3 `HeuristicLister`（listHeuristic）、Λ(G) の後続、Berry らの全列挙（テスト用） |
-| `src/heuristics.hpp` | min-fill による初期木分解（上界）、MMD+ 下界 |
-| `src/reduce.hpp` | 前処理: simplicial / almost simplicial 頂点の除去と木分解の復元 |
-| `src/solver.hpp` | Ascend / Descend / Alternate、連結成分ごとの処理 |
-| `tests/test.cpp` | ランダムテスト |
-| `tools/validate.cpp` | `.td` 検証ツール |
+| `src/bits.hpp` | Variable-length bitset for vertex sets |
+| `src/graph.hpp` | Graphs, connected components, tree decompositions, PACE I/O, validation and compression of tree decompositions |
+| `src/msdp.hpp` | Part 1: `msDP(G, k, Δ)` |
+| `src/minseps.hpp` | Part 2: `listExact(G, k)`; Part 3: `HeuristicLister` (listHeuristic); successors in Λ(G); full enumeration by Berry et al. (for testing) |
+| `src/heuristics.hpp` | Initial tree decomposition by min-fill (upper bound), MMD+ lower bound |
+| `src/reduce.hpp` | Preprocessing: removal of simplicial / almost simplicial vertices and restoration of the tree decomposition |
+| `src/solver.hpp` | Ascend / Descend / Alternate, processing per connected component |
+| `tests/test.cpp` | Randomized tests |
+| `tools/validate.cpp` | `.td` validator |
 
-## アルゴリズムの概要
+## Algorithm overview
 
-### 部品1 msDP(G, k, Δ)（スライド 13–29）
+### Part 1: msDP(G, k, Δ) (slides 13–29)
 
-頂点に全順序 0 < 1 < … を固定し、頂点集合は最小頂点で比較します。連結集合 C が **inbound** とは、
-G∖N(C) の full component D で min D < min C となるものが存在することです。
+We fix a total order 0 < 1 < … on the vertices and compare vertex sets by their minimum vertex. A connected set C is **inbound**
+if G∖N(C) has a full component D with min D < min C.
 
-1. L = { C : C は inbound、N(C) ∈ Δ }（Δ の各 S について、G∖S の full component のうち最小頂点が最小のもの以外）
-2. L を |C| の昇順に処理し、`isFeasible(C)` が真なら C を feasible とマークする
-3. 最後に `isFeasible(V(G))`（N(V) = ∅）で判定する
+1. L = { C : C is inbound and N(C) ∈ Δ } (for each S in Δ, the full components of G∖S except the one with the smallest minimum vertex)
+2. Process L in increasing order of |C|, and mark C as feasible if `isFeasible(C)` is true
+3. Finally, decide by `isFeasible(V(G))` (N(V) = ∅)
 
 ```
 isFeasible(C):
-  if |N[C]| ≤ k+1: return true                         # 葉 bag N[C]
-  for マーク済み D (min C ∈ D, D ⊊ C, |N(C) ∪ N(D)| ≤ k+1):
+  if |N[C]| ≤ k+1: return true                         # leaf bag N[C]
+  for marked D (min C ∈ D, D ⊊ C, |N(C) ∪ N(D)| ≤ k+1):
      if allFeasible(N(C) ∪ N(D), C): return true
   return allFeasible(N(C) ∪ {min C}, C)
 allFeasible(S, C):
   if |S| > k+1: return false
-  for C 内の G∖S の各成分 D:
-     N(D) = S なら isFeasible(D) を再帰的に要求（Case 2）
-     それ以外なら D がマーク済みであることを要求（Case 1, inbound）
+  for each component D of G∖S inside C:
+     if N(D) = S, require isFeasible(D) recursively (Case 2)
+     otherwise, require that D is marked (Case 1, inbound)
   return true
 ```
 
-潜在極大クリークは列挙せず、bag S は再帰の中で暗黙に現れます。成功したときに使った S（または葉 bag N[C]）を
-記録しておき、YES のときはそこから木分解を復元します（bag S の子として C 内の G∖S の各成分の部分木をつなぐ）。
+Potential maximal cliques are not enumerated; the bags S appear implicitly in the recursion. We record the S used on success
+(or the leaf bag N[C]), and on YES we reconstruct the tree decomposition from these records (the subtrees for the components
+of G∖S inside C are attached as children of the bag S).
 
-### 部品2 listExact(G, k)（スライド 33–44）
+### Part 2: listExact(G, k) (slides 33–44)
 
-連結な A（a ∈ A、b ∉ N[A]、N(A) は A と C_b(A) を full component とする極小 a-b 分離集合）と F ⊆ N(A) に対し、
-Δ_ab(A, F) = { |S| ≤ k, F ⊆ S, A ⊆ C_a, C_b ∩ N[A] = ∅, |C_a| ≤ |C_b| を満たす極小 a-b 分離集合 S } とし、
+For a connected A (a ∈ A, b ∉ N[A], and N(A) is a minimal a-b separator with full components A and C_b(A)) and F ⊆ N(A), let
 
-  Δ_ab(A, F) = Δ_ab(A, F ∪ {v}) ∪ Δ_ab(A′, F)   （v ∈ N(A)∖F、N(A′) は A ∪ {v} に close な極小 (A∪{v})-b 分離集合）
+  Δ_ab(A, F) = { minimal a-b separators S with |S| ≤ k, F ⊆ S, A ⊆ C_a, C_b ∩ N[A] = ∅, |C_a| ≤ |C_b| }.
 
-で再帰的に列挙します。枝刈りは次のとおりです。
+We enumerate it recursively by
 
-* |F| > k、|A| > |C_b(A)|、「|F| = k かつ N(A) ≠ F」、N(A) = F なら {F} を出力
-* N(A)∖F のうち b に隣接する頂点は必ず S に入る（まとめて F に追加。分岐しない）
-* 第 2 分岐で A′ ∩ F ≠ ∅ なら空
-* 分岐に使う v ∈ N(A)∖F はスライドでは任意ですが、C_b(A) への隣接数が最大の頂点を選びます
-  （PACE 2017 の 26 インスタンスで 6 通りの選び方を比較し、最小番号の頂点を選ぶより合計約 30% 速かったため）
-* **点素パス**: N(A)∖F の各頂点から V∖N[A]∖{b} を通る点素パスを貪欲に伸ばす。S∖F が切れるパスは高々 k − |F| 本なので、
-  短い方から (#パス − (k−|F|)) 本の頂点はすべて a 側に入る。その下界 lb = |A| + (その頂点数) が |C_b(A)| を超えるか、
-  2·lb > n − |F| なら空（スライド 41 の「15 頂点」の例）
+  Δ_ab(A, F) = Δ_ab(A, F ∪ {v}) ∪ Δ_ab(A′, F)   (v ∈ N(A)∖F, and N(A′) is the minimal (A∪{v})-b separator close to A ∪ {v}).
 
-**分割統治**（スライド 42–44）: min-fill 頂点 v について X = N(v) とすると、極小分離集合 S は
-(i) X と交差する（X の非隣接 2 頂点 a, b が G∖S の別々の full component に入る）か、
-(ii) G∖N[v] のある成分 C に局所的（S = N(C) または S ⊆ N[C]）です。
-(i) は X の非隣接な順序対 (a, b) ごとに Δ_ab を列挙します（a = min(C_a ∩ X) を枝刈りに使用）。
-(ii) は N(C) をクリーク化した局所グラフ G[N[C]] に再帰します。最後に、出力した各集合が G の極小分離集合であることを再確認します。
+The pruning rules are:
 
-### 部品3 listHeuristic(G, T, k)（スライド 45）
+* If |F| > k, |A| > |C_b(A)|, or (|F| = k and N(A) ≠ F), the set is empty; if N(A) = F, output {F}
+* The vertices of N(A)∖F adjacent to b must be in S (they are all added to F at once, without branching)
+* In the second branch, the set is empty if A′ ∩ F ≠ ∅
+* The slides allow any v ∈ N(A)∖F for branching; we choose a vertex with the most neighbors in C_b(A)
+  (we compared 6 selection rules on 26 PACE 2017 instances, and this one was about 30% faster in total than choosing the smallest-numbered vertex)
+* **Vertex-disjoint paths**: greedily extend vertex-disjoint paths from the vertices of N(A)∖F through V∖N[A]∖{b}. Since S∖F can cut
+  at most k − |F| of these paths, all vertices of the shortest (#paths − (k−|F|)) paths lie on the a side. If the resulting lower bound
+  lb = |A| + (the number of those vertices) exceeds |C_b(A)|, or 2·lb > n − |F|, the set is empty (the "15 vertices" example on slide 41)
 
-* Δ0: T の各 bag X と G∖X の各成分 C について、C に close な極小分離集合（⊆ N(C) ⊆ X）のうちサイズ k 以下のもの
-* Δ_{i+1} = Δ_i ∪ { Λ(G) における Δ_i の要素の後続でサイズ k 以下のもの }（後続 = full component C と v ∈ S について C ∪ {v} に close な分離集合）
+**Divide and conquer** (slides 42–44): for a min-fill vertex v, let X = N(v). Every minimal separator S either
+(i) crosses X (two non-adjacent vertices a, b of X lie in different full components of G∖S), or
+(ii) is local to some component C of G∖N[v] (S = N(C) or S ⊆ N[C]).
+For (i), we enumerate Δ_ab for each ordered pair (a, b) of non-adjacent vertices of X (using a = min(C_a ∩ X) for pruning).
+For (ii), we recurse on the local graph G[N[C]] in which N(C) is made into a clique. Finally, we re-check that every output set is a minimal separator of G.
 
-### 全体の探索（スライド 4）
+### Part 3: listHeuristic(G, T, k) (slide 45)
 
-* **Ascend**: 下界（MMD+）から k を 1 ずつ上げ、`msDP(G, k, listExact(G, k))` が YES になったら停止
-* **Descend**: min-fill の木分解（幅 w）から始め、k = w−1 で Δ0, Δ1, … に対して msDP を試して改善を繰り返す。
-  リストが増えなくなったら `msDP(G, w−1, listExact(G, w−1))` で最適性を確認（YES ならさらに改善を続ける）
-* **Alternate**: Ascend の 1 ステップ（下界の検証）と Descend の 1 ステップ（リストの 1 段拡張と msDP）を、
-  それぞれの累積時間が等しくなるように交互に実行。下界と上界が一致したら停止
+* Δ0: for each bag X of T and each component C of G∖X, the minimal separators close to C (⊆ N(C) ⊆ X) of size at most k
+* Δ_{i+1} = Δ_i ∪ { successors in Λ(G) of the elements of Δ_i, of size at most k } (a successor is, for a full component C and v ∈ S, the separator close to C ∪ {v})
 
-グラフは連結成分ごとに解きます。それまでの成分で得た幅以下で済む成分は、その幅を下界として扱います。
+### Overall search (slide 4)
 
-## 推測・変更点（論文本文が参照できないため）
+* **Ascend**: starting from the lower bound (MMD+), increase k by one and stop when `msDP(G, k, listExact(G, k))` returns YES
+* **Descend**: starting from the min-fill tree decomposition (of width w), repeatedly try to improve it by running msDP with k = w−1 on Δ0, Δ1, ….
+  When the list stops growing, check optimality with `msDP(G, w−1, listExact(G, w−1))` (if YES, keep improving)
+* **Alternate**: alternate one Ascend step (verifying the lower bound) and one Descend step (extending the list by one level and running msDP)
+  so that their cumulative running times stay equal. Stop when the lower and upper bounds meet
 
-正しさ（YES のとき必ず幅 k 以下の正しい木分解が得られること）は、すべての変更で保たれています。
+The graph is solved one connected component at a time. Any width up to the largest width obtained for the earlier components is acceptable,
+so that width is used as a lower bound for the remaining components.
 
-1. **isFeasible の 2 行目**: スライドは「N(C) ∈ Δ かつ |N[C]| ≤ k+1」ですが、N(C) ∈ Δ の条件は外しました（bag N[C] 1 個で常に正しい木分解になるため）。
-2. **allFeasible の非 full 成分**: マーク済みでなくても |N[D]| ≤ k+1 なら受け入れます（同じ理由）。スライドの `assert D is inbound` は検査せず、マーク済みかどうかだけを見ます。
-3. **メモ化**: 成功結果は永続的に、失敗結果は次に新しい集合がマークされるまで記憶します。
-4. **Δ_ab の基底条件**: スライド 35 の条件のうち、そのままでは列挙漏れが起こりうると判断したものは置き換えました。
-   * `min(C_b) ≠ b` は使いません（C_b は再帰の中で縮むので、現時点の C_b(A) の最小値で判定すると解を落とす可能性があるため）。代わりに a 側の `a = min(C_a ∩ X)` だけを使います。
-   * サイズ条件の (|V|−k)/2 は (n−|F|)/2 にしました（|S| < k の解でも成り立つように）。|A| + (|N(A)|−k) の条件は点素パスの下界（長さ 1 のパスに相当）に含まれます。
-   * (a, b) は X = N(v) 上の非隣接な**順序対**として列挙し、|C_a| ≤ |C_b| で対称性を一部除いたうえで、重複はハッシュ集合で除きます。
-5. **局所グラフ**: G∖N[v] の成分 C について、N(C) をクリーク化した G[N[C]] を局所グラフとしました（N(C) は {v} と C を full component に持つ極小分離集合なので、標準的な realization の補題が使えます）。
-6. **Δ0 の定義**: 「bag に局所的な極小分離集合」を「bag X に含まれる、X の外側の成分に close な極小分離集合」と解釈しました。
-7. **前処理（スライドにはない追加）**: simplicial 頂点と、次数 ≤ 下界 の almost simplicial 頂点を除去する安全な縮約（Bodlaender–Koster）を既定で有効にしています。`-p0` で無効化できます。
-8. **分岐頂点 v の選び方**: 上記のとおり実験的に決めました。
-9. **Alternate の資源配分**: スライドには「some resource balancing」としか書かれていないため、累積時間を均等にする方式にしました。
+## Guesses and deviations (since the paper itself was not available)
 
-## テスト
+All of the changes preserve correctness (whenever the answer is YES, a valid tree decomposition of width at most k is obtained).
 
-`make test` では、乱数シードを変えて次を確認します（引数でシードを指定可能: `./test-bin 42`）。
+1. **Line 2 of isFeasible**: the slides have "N(C) ∈ Δ and |N[C]| ≤ k+1", but we dropped the condition N(C) ∈ Δ (a single bag N[C] always gives a valid tree decomposition).
+2. **Non-full components in allFeasible**: a component D is accepted even if it is not marked, as long as |N[D]| ≤ k+1 (for the same reason). The `assert D is inbound` of the slides is not checked; we only check whether D is marked.
+3. **Memoization**: successes are memoized permanently, and failures are memoized until the next new set is marked.
+4. **Base conditions of Δ_ab**: among the conditions on slide 35, those that we judged could miss separators if used as they are were replaced.
+   * `min(C_b) ≠ b` is not used (C_b shrinks during the recursion, so testing it with the minimum of the current C_b(A) could lose solutions). Instead, we use only `a = min(C_a ∩ X)` on the a side.
+   * The size condition (|V|−k)/2 was changed to (n−|F|)/2 (so that it also holds for solutions with |S| < k). The condition |A| + (|N(A)|−k) is subsumed by the lower bound from vertex-disjoint paths (it corresponds to paths of length 1).
+   * The pairs (a, b) are enumerated as **ordered pairs** of non-adjacent vertices of X = N(v); some of the symmetry is removed by |C_a| ≤ |C_b|, and duplicates are removed with a hash set.
+5. **Local graph**: for a component C of G∖N[v], the local graph is G[N[C]] with N(C) made into a clique (N(C) is a minimal separator with full components {v} and C, so the standard realization lemma applies).
+6. **Definition of Δ0**: we interpret "minimal separators local to a bag" as "minimal separators contained in a bag X and close to a component outside X".
+7. **Preprocessing (an addition not in the slides)**: safe reductions (Bodlaender–Koster) that remove simplicial vertices and almost simplicial vertices of degree ≤ the lower bound are enabled by default. They can be disabled with `-p0`.
+8. **Choice of the branching vertex v**: determined experimentally, as described above.
+9. **Resource balancing in Alternate**: the slides only say "some resource balancing", so we keep the cumulative running times equal.
 
-* `listExact(G, k)` が、Berry らのアルゴリズムで全列挙した極小分離集合のうちサイズ k 以下のものと完全に一致すること（n ≤ 24）
-* 3 つの探索方法それぞれについて、前処理あり・なし（`-p0`）の両方で、出力が正しい木分解であり、幅が総当たりの木幅 DP（n ≤ 14）と一致すること
-* Petersen グラフ、格子、閉路、完全グラフ、辺なしグラフの既知の木幅と一致すること（頂点番号をランダムに付け替えた版も含む）
-* n = 20–35 のランダムグラフで 3 方法の結果が一致すること
+## Tests
 
-## 実験結果（参考）
+`make test` checks the following with different random seeds (a seed can be given as an argument: `./test-bin 42`).
 
-PACE 2017 exact トラックの全 200 インスタンスで、1 インスタンス 30 秒の制限で実行した結果です
-（4 コアのマシンで 2 本並列に実行、`td-validate` で検証し、公開されている最適幅と比較）。
+* `listExact(G, k)` coincides exactly with the minimal separators of size at most k among all minimal separators enumerated by the algorithm of Berry et al. (n ≤ 24)
+* For each of the three search methods, both with and without preprocessing (`-p0`), the output is a valid tree decomposition whose width equals the treewidth computed by a brute-force treewidth DP (n ≤ 14)
+* The known treewidths of the Petersen graph, grids, cycles, complete graphs and edgeless graphs are obtained (including versions with randomly relabeled vertices)
+* The three methods give the same results on random graphs with n = 20–35
 
-| 方法 | 30 秒以内に解けた数 | うち 10 秒以内 | 幅の誤り | 不正な木分解 |
+## Experimental results (for reference)
+
+Results on all 200 instances of the PACE 2017 exact track with a time limit of 30 seconds per instance
+(2 runs in parallel on a 4-core machine; outputs were checked with `td-validate` and compared with the published optimal widths).
+
+| Method | Solved within 30 s | Of which within 10 s | Wrong width | Invalid decomposition |
 |---|---|---|---|---|
 | ascend | 162 / 200 | 136 | 0 | 0 |
 | alternate | 171 / 200 | 150 | 0 | 0 |
 
-最初の版（分岐頂点 = 最小番号、`compOf` の最適化なし）では、それぞれ 144 と 155 でした。
+The first version (branching vertex = the smallest-numbered one, without the `compOf` optimization) solved 144 and 155 instances, respectively.
 
-## ライセンス
+## License
 
-MIT License です。全文は [LICENSE](LICENSE) を参照してください。
+This project is released under the MIT License. See [LICENSE](LICENSE) for the full text.
 
-ライセンスの対象はこのリポジトリのコードと文書です。実装の元になったアルゴリズムは H. Tamaki の上記の研究によるもので、
-このリポジトリは Tamaki 氏による公式の実装ではありません。
+The license covers the code and documentation in this repository. The underlying algorithm is due to the work of H. Tamaki cited above;
+this repository is not an official implementation by Tamaki.
