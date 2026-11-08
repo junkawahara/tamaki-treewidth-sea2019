@@ -118,7 +118,7 @@ All of the changes preserve correctness (whenever the answer is YES, a valid tre
    * `min(C_b) ≠ b` is not used (C_b shrinks during the recursion, so testing it with the minimum of the current C_b(A) could lose solutions). Instead, we use only `a = min(C_a ∩ X)` on the a side.
    * The size condition (|V|−k)/2 was changed to (n−|F|)/2 (so that it also holds for solutions with |S| < k). The condition |A| + (|N(A)|−k) is subsumed by the lower bound from vertex-disjoint paths (it corresponds to paths of length 1).
    * The pairs (a, b) are enumerated as **ordered pairs** of non-adjacent vertices of X = N(v); some of the symmetry is removed by |C_a| ≤ |C_b|, and duplicates are removed with a hash set.
-5. **Local graph**: for a component C of G∖N[v], the local graph is G[N[C]] with N(C) made into a clique (N(C) is a minimal separator with full components {v} and C, so the standard realization lemma applies).
+5. **Local graph**: for a component C of G∖N[v], the local graph is G[N[C]] with N(C) made into a clique (N(C) is a minimal separator, since C and the component of G∖N(C) containing v are full components of it — every vertex of N(C) ⊆ N(v) is adjacent to v — so the standard realization lemma applies).
 6. **Definition of Δ0**: we interpret "minimal separators local to a bag" as "minimal separators contained in a bag X and close to a component outside X".
 7. **Preprocessing (an addition not in the slides)**: safe reductions (Bodlaender–Koster) that remove simplicial vertices and almost simplicial vertices of degree ≤ the lower bound are enabled by default. They can be disabled with `-p0`.
 8. **Choice of the branching vertex v**: determined experimentally, as described above.

@@ -87,8 +87,9 @@ inline std::vector<Bits> allMinimalSeparators(const Graph& G) {
 // of G \ S; then a, b are non-adjacent), or has a full component disjoint
 // from X, hence S = X = N(C) or S is local to a component C of G \ N[v].
 // The local ones are minimal separators of H_C = G[N[C]] with N(C) completed
-// into a clique (N(C) is a minimal separator since {v} and C are full
-// components), which are listed recursively.  Every listed set is finally
+// into a clique (N(C) is a minimal separator: C and the component of
+// G \ N(C) containing v are full components, as N(C) ⊆ N(v); {v} alone need
+// not be a component), which are listed recursively.  Every listed set is finally
 // re-checked to be a minimal separator of G.
 // ---------------------------------------------------------------------------
 
