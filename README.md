@@ -20,6 +20,8 @@ make test            # randomized tests (checked against brute-force enumeration
 * `-m`: search method. The default is `ascend` (a required feature); `descend` and `alternate` are also implemented
 * `-p0`: disable preprocessing (the safe reduction rules) and solve with the algorithm of the slides alone
 * `-v` / `-vv`: print progress to standard error as `c ...` lines
+* Malformed input is rejected with exit status 1 instead of being guessed at: for example, a p-line other than `p tw n m`, a number of edge lines different from m, or a token that is not an integer in range.
+  `td-validate` reads the `.td` file just as strictly, and also checks the `s td` line (number of bags, maximum bag size, number of vertices) against the data and the graph
 
 ## Files
 
