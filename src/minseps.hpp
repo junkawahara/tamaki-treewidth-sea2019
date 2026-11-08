@@ -2,10 +2,14 @@
 //
 //  * closeSeparators / lambdaSuccessors / allMinimalSeparators:
 //      the Λ(G) structure of Berry et al. (slides 30-32).
-//  * listExact(G, k): Δ_k(G), all minimal separators of size <= k
+//  * listExact(G, k): Δ_k(G), all non-empty minimal separators of size <= k
 //      (slides 33-44), via the recurrence on Δ_ab(A, F) with pruning and
 //      divide and conquer on X = N(v) for a min-fill vertex v.
 //  * HeuristicLister: Δ0 ⊂ Δ1 ⊂ ... ⊆ Δ_k(G) from a tree decomposition (slide 45).
+//
+// "Minimal separators" here means non-empty ones.  The empty set is a minimal
+// separator exactly when G is disconnected; no listing below includes it (the
+// solver works on one connected component at a time, where it never occurs).
 #pragma once
 #include <algorithm>
 #include <functional>
@@ -35,7 +39,7 @@ void lambdaSuccessors(const Graph& G, const Bits& S, F&& emit) {
   }
 }
 
-// All minimal separators (Berry, Bordat, Cogis 2000).  Exponential output; for tests.
+// All non-empty minimal separators (Berry, Bordat, Cogis 2000).  Exponential output; for tests.
 inline std::vector<Bits> allMinimalSeparators(const Graph& G) {
   SepSet seen;
   std::vector<Bits> list;

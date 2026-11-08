@@ -128,7 +128,9 @@ All of the changes preserve correctness (whenever the answer is YES, a valid tre
 
 `make test` checks the following with different random seeds (a seed can be given as an argument: `./test-bin 42`).
 
-* `listExact(G, k)` coincides exactly with the minimal separators of size at most k among all minimal separators enumerated by the algorithm of Berry et al. (n ≤ 24)
+* `listExact(G, k)` coincides exactly with the minimal separators of size at most k among all minimal separators enumerated by the algorithm of Berry et al. (n ≤ 24, connected and disconnected graphs).
+  For n ≤ 12, the enumeration by Berry et al. is itself checked against a brute-force test of every vertex subset.
+  All of these listings omit the empty set (a minimal separator exactly when the graph is disconnected), since the solver works on one connected component at a time
 * For each of the three search methods, both with and without preprocessing (`-p0`), the output is a valid tree decomposition whose width equals the treewidth computed by a brute-force treewidth DP (n ≤ 14)
 * The known treewidths of the Petersen graph, grids, cycles, complete graphs and edgeless graphs are obtained (including versions with randomly relabeled vertices)
 * The three methods give the same results on random graphs with n = 20–35

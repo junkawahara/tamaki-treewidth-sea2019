@@ -1,5 +1,6 @@
 // Randomized tests:
-//  1. listExact(G, k) == { S ∈ allMinimalSeparators(G) : |S| <= k }
+//  1. listExact(G, k) == { S ∈ allMinimalSeparators(G) : |S| <= k } (connected and
+//     disconnected G), and allMinimalSeparators(G) agrees with brute force for n <= 12
 //  2. ascend / descend / alternate return valid decompositions whose width equals
 //     the treewidth computed by a brute-force O*(2^n) DP (small n), and agree
 //     with each other on larger graphs.
@@ -91,16 +92,35 @@ static bool sameSets(std::vector<Bits> a, std::vector<Bits> b) {
   return A == B && A.size() == a.size() && B.size() == b.size();
 }
 
+// All non-empty minimal separators, by testing every vertex subset (small n only).
+static std::vector<Bits> bruteMinimalSeparators(const Graph& G) {
+  std::vector<Bits> out;
+  for (uint32_t m = 1; m < (1u << G.n); ++m) {
+    Bits S = G.empty();
+    for (int v = 0; v < G.n; ++v)
+      if (m >> v & 1) S.set(v);
+    if (G.isMinimalSeparator(S)) out.push_back(S);
+  }
+  return out;
+}
+
 static void testListing(std::mt19937& rng, int trials, int maxN) {
-  long long compared = 0, seps = 0;
+  long long compared = 0, seps = 0, disconnected = 0;
   for (int t = 0; t < trials; ++t) {
     int n = 3 + rng() % (maxN - 2);
     double p = 0.15 + (rng() % 60) / 100.0;
     Graph G = randomGraph(rng, n, p);
     std::vector<Bits> all = allMinimalSeparators(G);
-    // listExact assumes nothing about connectivity in its recurrence, but the
-    // solver only calls it on connected graphs; test both anyway.
-    if (G.components(G.all()).size() != 1) continue;
+    // The solver only calls listExact on connected graphs, but both listings
+    // are meant to work on any graph (omitting the empty separator), so
+    // disconnected graphs are tested too.  For small n the Berry et al.
+    // listing is itself checked against brute force.
+    if (G.components(G.all()).size() != 1) ++disconnected;
+    if (n <= 12 && !sameSets(all, bruteMinimalSeparators(G))) {
+      CHECK(false, "allMinimalSeparators mismatch with brute force n=" << n);
+      dump(G);
+      return;
+    }
     for (int k = 0; k <= n; ++k) {
       std::vector<Bits> want;
       for (auto& S : all)
@@ -116,7 +136,8 @@ static void testListing(std::mt19937& rng, int trials, int maxN) {
       }
     }
   }
-  std::cerr << "  compared " << compared << " (G,k) pairs, " << seps << " separators" << std::endl;
+  std::cerr << "  compared " << compared << " (G,k) pairs, " << seps << " separators, " << disconnected
+            << " disconnected graphs" << std::endl;
 }
 
 static void testTreewidth(std::mt19937& rng, int trials, int maxN) {
