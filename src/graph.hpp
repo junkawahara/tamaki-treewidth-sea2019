@@ -1,11 +1,14 @@
 // Graph, tree decomposition, and PACE 2017 I/O.
 #pragma once
 #include <algorithm>
+#include <charconv>
+#include <climits>
 #include <istream>
 #include <ostream>
 #include <sstream>
 #include <stdexcept>
 #include <string>
+#include <system_error>
 #include <utility>
 #include <vector>
 
@@ -235,29 +238,57 @@ inline std::string validateTD(const Graph& G, const TreeDecomp& td) {
 }
 
 // ---- PACE 2017 I/O ----
+// Lines starting with 'c' are comments; blank lines are skipped.  Every other
+// line must match the format exactly, otherwise std::runtime_error is thrown.
 
+namespace pace_io {
+inline std::vector<std::string> tokens(const std::string& line) {
+  std::istringstream ss(line);
+  std::vector<std::string> t;
+  std::string s;
+  while (ss >> s) t.push_back(s);
+  return t;
+}
+// The whole token must be a decimal integer in [lo, hi].
+inline long long parseInt(const std::string& tok, long long lo, long long hi, const std::string& line) {
+  long long x = 0;
+  const char* end = tok.data() + tok.size();
+  auto [p, ec] = std::from_chars(tok.data(), end, x);
+  if (ec != std::errc() || p != end || x < lo || x > hi)
+    throw std::runtime_error("bad number '" + tok + "' in line: " + line);
+  return x;
+}
+}  // namespace pace_io
+
+// "p tw n m" followed by exactly m edge lines "u v" (1 <= u, v <= n).
 inline Graph readGr(std::istream& in) {
+  using namespace pace_io;
   std::string line;
   Graph G;
   bool header = false;
+  long long m = 0, edges = 0;
   while (std::getline(in, line)) {
-    if (line.empty() || line[0] == 'c') continue;
-    std::istringstream ss(line);
+    if (!line.empty() && line[0] == 'c') continue;
+    std::vector<std::string> t = tokens(line);
+    if (t.empty()) continue;
     if (!header) {
-      std::string p, tw;
-      int n;
-      long long m;
-      if (!(ss >> p >> tw >> n >> m) || p != "p") throw std::runtime_error("bad header: " + line);
+      if (t.size() != 4 || t[0] != "p" || t[1] != "tw") throw std::runtime_error("bad p-line: " + line);
+      int n = static_cast<int>(parseInt(t[2], 0, INT_MAX, line));
+      m = parseInt(t[3], 0, LLONG_MAX, line);
       G = Graph(n);
       header = true;
       continue;
     }
-    int u, v;
-    if (!(ss >> u >> v)) continue;
-    if (u < 1 || v < 1 || u > G.n || v > G.n) throw std::runtime_error("bad edge: " + line);
+    if (t.size() != 2) throw std::runtime_error("bad edge line: " + line);
+    int u = static_cast<int>(parseInt(t[0], 1, G.n, line));
+    int v = static_cast<int>(parseInt(t[1], 1, G.n, line));
+    if (++edges > m) throw std::runtime_error("more edges than the " + std::to_string(m) + " declared in the p-line");
     G.addEdge(u - 1, v - 1);
   }
   if (!header) throw std::runtime_error("missing p-line");
+  if (edges != m)
+    throw std::runtime_error("the p-line declares " + std::to_string(m) + " edges but " + std::to_string(edges) +
+                             " were read");
   return G;
 }
 
